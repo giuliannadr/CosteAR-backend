@@ -196,4 +196,39 @@ describe('#115 — resolución de parámetros de costeo', () => {
       expect(entry.comment).toContain('sin confirmar');
     });
   });
+
+  describe('delete', () => {
+    it('borra un override aunque tenga el mismo número que el default y vuelve a origen default', async () => {
+      const db = makeDb({
+        parametroCosteo: {
+          findMany: vi.fn(async () => []),
+          findFirst: vi.fn(async () => ({
+            id: 'pc-1',
+            clave: 'vida_util_lote_meses',
+            valorNum: 24,
+            structureId: null,
+            periodId: null,
+          })),
+          update: vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'pc-1', ...data })),
+        },
+      });
+      const r = await service(db).delete(USER, 'comp-1', 'vida_util_lote_meses', {}, ACTOR);
+
+      expect(r).toMatchObject({ valor: 24, origen: 'default', valorDefault: 24 });
+      expect((db.parametroCosteo as { update: ReturnType<typeof vi.fn> }).update).toHaveBeenCalledTimes(1);
+      expect(recordTraceAudit).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'delete', entityType: 'ParametroCosteo' }),
+        dbActual,
+      );
+    });
+
+    it('es idempotente cuando no hay override vigente', async () => {
+      const db = makeDb();
+      const r = await service(db).delete(USER, 'comp-1', 'vida_util_lote_meses', {}, ACTOR);
+
+      expect(r.origen).toBe('default');
+      expect((db.parametroCosteo as { update: ReturnType<typeof vi.fn> }).update).not.toHaveBeenCalled();
+      expect(recordTraceAudit).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -210,4 +210,56 @@ export class ParametrosCosteoService {
       return guardado;
     });
   }
+
+  /**
+   * Borra sólo el override del nivel solicitado. La ausencia es idempotente:
+   * la cascada ya resolvía desde arriba y no hay una decisión que auditar.
+   */
+  async delete(
+    userId: string,
+    companyId: string,
+    clave: string,
+    ctx: { structureId?: string | null; periodId?: string | null } = {},
+    actor: TraceActor,
+  ) {
+    const definicion = definicionDe(clave);
+    const definicionComportamiento = definicionComportamientoDe(clave);
+    if (!definicion && !definicionComportamiento) {
+      throw new NotFoundError(`No existe el parámetro de costeo "${clave}"`);
+    }
+    await this.companyDe(userId, companyId);
+    await this.validarAlcance(companyId, ctx);
+
+    await withTenant(userId, async (tx) => {
+      const existente = await tx.parametroCosteo.findFirst({
+        where: {
+          companyId,
+          structureId: ctx.structureId ?? null,
+          periodId: ctx.periodId ?? null,
+          clave,
+          deletedAt: null,
+        },
+      });
+      if (!existente) return;
+
+      const eliminado = await tx.parametroCosteo.update({
+        where: { id: existente.id },
+        data: { deletedAt: new Date() },
+      });
+      await recordTraceAudit(
+        {
+          entityType: 'ParametroCosteo',
+          entityId: existente.id,
+          action: 'delete',
+          actor,
+          before: existente,
+          after: eliminado,
+          comment: `Override del parámetro "${clave}" eliminado; vuelve a resolverse por cascada.`,
+        },
+        tx,
+      );
+    });
+
+    return this.resolver(userId, companyId, clave, ctx);
+  }
 }
