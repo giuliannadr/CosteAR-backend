@@ -150,9 +150,22 @@ type FirmaTransaccion = (
 const conTransaccion = extended as unknown as { $transaction: FirmaTransaccion };
 const origTx = conTransaccion.$transaction.bind(conTransaccion);
 
+type TxConTenant = {
+  $executeRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<unknown>;
+};
+
 conTransaccion.$transaction = function (arg, options) {
   if (typeof arg === 'function') {
-    return origTx((tx) => enterExplicitTransaction(() => arg(tx)), options);
+    return origTx((tx) => enterExplicitTransaction(async () => {
+      const tenantId = currentTenantId();
+      // Una transaccion directa tiene que conservar el tenant del request. Si
+      // no lo hace, la extension se desactiva para evitar anidarla y RLS ve
+      // NULL: el superusuario lo ocultaba, el rol de aplicacion lo rechaza.
+      if (tenantId) {
+        await (tx as TxConTenant).$executeRaw`SELECT set_config('app.user_id', ${tenantId}, true)`;
+      }
+      return arg(tx);
+    }), options);
   }
   return origTx(arg, options);
 };

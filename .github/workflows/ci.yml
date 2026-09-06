@@ -167,3 +167,68 @@ jobs:
         RLS_PROBE_DATABASE_URL: postgresql://costear_app:costear_app@localhost:5432/costear_test
         RLS_REQUIRE_PROBE: '1'
       run: npm run test:db
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: costear_e2e
+          POSTGRES_USER: costear
+          POSTGRES_PASSWORD: costear
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U costear"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      MIGRATION_DATABASE_URL: postgresql://costear:costear@localhost:5432/costear_e2e
+      DATABASE_URL: postgresql://costear_app:costear_app@localhost:5432/costear_e2e
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Use Node.js 22.x
+      uses: actions/setup-node@v7
+      with:
+        node-version: 22.x
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Prisma Generate
+      run: npx prisma generate
+
+    # El servidor E2E usa este rol. Sin esta separacion, un superusuario hace
+    # que RLS parezca funcionar aunque Postgres ni siquiera evalua la politica.
+    - name: Crear el rol restringido de la aplicacion
+      env:
+        PGPASSWORD: costear
+      run: |
+        psql -h localhost -U costear -d costear_e2e -v ON_ERROR_STOP=1 <<'SQL'
+        CREATE ROLE costear_app LOGIN PASSWORD 'costear_app' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+        GRANT USAGE ON SCHEMA public TO costear_app;
+        ALTER DEFAULT PRIVILEGES FOR ROLE costear GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO costear_app;
+        ALTER DEFAULT PRIVILEGES FOR ROLE costear GRANT USAGE, SELECT ON SEQUENCES TO costear_app;
+        SQL
+
+    - name: Compilar y recorrer el servidor vivo
+      run: |
+        npm run build
+        npm run test:e2e

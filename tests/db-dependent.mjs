@@ -72,4 +72,6 @@ export const CON_ROL_DUENO = [
 ];
 
 /** Todo lo que necesita base, para que la suite rápida lo excluya. */
-export const TESTS_CON_BASE = [...CON_ROL_DE_APP, ...CON_ROL_DUENO];
+export const E2E_CON_ROL_DE_APP = ['tests/e2e/**/*.test.ts'];
+
+export const TESTS_CON_BASE = [...CON_ROL_DE_APP, ...CON_ROL_DUENO, ...E2E_CON_ROL_DE_APP];

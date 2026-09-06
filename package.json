@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:db": "vitest run --config vitest.db.config.ts",
     "test:http": "vitest run tests/http",
     "check:tests-base": "node scripts/check-tests-con-base.mjs",
