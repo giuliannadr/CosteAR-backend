@@ -128,7 +128,7 @@ const profiles = [
     energyIsMP: false,
     fuelIsMP: false,
     detectPatterns: [],
-    measurementUnit: 'docena',
+    measurementUnit: 'cajon',
     isActive: true,
   },
   {
