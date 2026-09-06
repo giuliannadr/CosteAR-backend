@@ -79,4 +79,21 @@ export async function registerParametrosCosteoRoutes(app: FastifyInstance): Prom
       return { data };
     },
   );
+
+  app.delete(
+    '/companies/:companyId/parametros-costeo/:clave',
+    { preHandler: authenticate },
+    async (request) => {
+      const { companyId, clave } = claveParams.parse(request.params);
+      const { structureId, periodId } = alcanceQuery.parse(request.query);
+      const data = await service.delete(
+        request.authUser!.id,
+        companyId,
+        clave,
+        { structureId, periodId },
+        actorFrom(request),
+      );
+      return { data };
+    },
+  );
 }

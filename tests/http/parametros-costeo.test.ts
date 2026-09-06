@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { FastifyRequest, FastifyReply } from 'fastify';
+import { definicionDe } from '@/domain/parametros/parametros-costeo.js';
 
 const USER = 'user-1';
 const COMPANY_ID = '00000000-0000-0000-0000-000000000001';
@@ -72,6 +73,25 @@ describe('GET /companies/:companyId/parametros-costeo', () => {
     const { data } = JSON.parse(res.body) as { data: { clave: string; origen: string }[] };
     expect(data.length).toBeGreaterThan(0);
     expect(data.every((p) => p.origen === 'default')).toBe(true);
+  });
+
+  it('expone los metadatos del catálogo sin duplicarlos en HTTP', async () => {
+    const app = await buildTestApp();
+    const res = await app.inject({
+      method: 'GET',
+      url: `/companies/${COMPANY_ID}/parametros-costeo`,
+    });
+
+    const { data } = JSON.parse(res.body) as {
+      data: Array<{ clave: string; descripcion: string; unidad: string | null; valorDefault: number; seguro: boolean }>;
+    };
+    const esperado = definicionDe('huevos_por_cajon')!;
+    expect(data.find((p) => p.clave === esperado.clave)).toMatchObject({
+      descripcion: esperado.descripcion,
+      unidad: esperado.unidad ?? null,
+      valorDefault: esperado.valorDefault,
+      seguro: esperado.seguro,
+    });
   });
 
   it('404 cuando la empresa no es de quien pide', async () => {
@@ -161,5 +181,41 @@ describe('PUT /companies/:companyId/parametros-costeo/:clave', () => {
     });
 
     expect(res.statusCode).toBe(404);
+  });
+});
+
+describe('DELETE /companies/:companyId/parametros-costeo/:clave', () => {
+  it('200 — elimina el override y devuelve el valor del catálogo', async () => {
+    mockPrisma.parametroCosteo.findFirst.mockResolvedValue({
+      id: 'pc-1',
+      clave: 'vida_util_lote_meses',
+      valorNum: 24,
+      structureId: null,
+      periodId: null,
+    });
+    mockPrisma.parametroCosteo.update.mockResolvedValue({ id: 'pc-1', deletedAt: new Date() });
+    const app = await buildTestApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/companies/${COMPANY_ID}/parametros-costeo/vida_util_lote_meses`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).data).toMatchObject({ valor: 24, origen: 'default', valorDefault: 24 });
+    expect(mockPrisma.parametroCosteo.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { deletedAt: expect.any(Date) } }),
+    );
+  });
+
+  it('es idempotente cuando no existe un override', async () => {
+    const app = await buildTestApp();
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/companies/${COMPANY_ID}/parametros-costeo/vida_util_lote_meses`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).data.origen).toBe('default');
+    expect(mockPrisma.parametroCosteo.update).not.toHaveBeenCalled();
   });
 });
