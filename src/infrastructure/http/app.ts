@@ -35,6 +35,7 @@ import { registerDesperdicioRoutes } from './routes/desperdicio.routes.js';
 import { registerParametrosCosteoRoutes } from './routes/parametros-costeo.routes.js';
 import { registerActivoAmortizableRoutes } from './routes/activo-amortizable.routes.js';
 import { registerEventosLoteRoutes } from './routes/eventos-lote.routes.js';
+import { registerLotesProductivosRoutes } from './routes/lotes-productivos.routes.js';
 import { registerProduccionDiariaRoutes } from './routes/produccion-diaria.routes.js';
 import { registerStockProductoRoutes } from './routes/stock-producto.routes.js';
 import { registerCorridaProduccionRoutes } from './routes/corrida-produccion.routes.js';
@@ -211,6 +212,7 @@ export async function buildApp(): Promise<FastifyInstance> {
       await registerParametrosCosteoRoutes(api);
       await registerActivoAmortizableRoutes(api);
       await registerEventosLoteRoutes(api);
+      await registerLotesProductivosRoutes(api);
       await registerProduccionDiariaRoutes(api);
       await registerStockProductoRoutes(api);
       await registerCorridaProduccionRoutes(api);
