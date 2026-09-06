@@ -15,9 +15,19 @@ type NumeroTablero = {
   motivos: string[];
 };
 
+type AreaPendienteCierre = 'calculo' | 'imputacion' | 'configuracion' | 'produccion' | 'ventas' | 'costeo';
+
+type PendienteCierre = {
+  area: AreaPendienteCierre;
+  dato: string;
+  periodo: { id: string; codigo: string };
+};
+
+type FuentePendiente = Omit<PendienteCierre, 'periodo'>;
+
 type ResultadoCorrida = {
   grossMargin?: number;
-  incompletitud?: { incompleto?: boolean; motivos?: string[] };
+  incompletitud?: { incompleto?: boolean; motivos?: string[]; datosPendientes?: Array<{ id: string; nombre: string }> };
   detail?: { unitCost?: { unitFinishedGoodsCost?: number; basadoEn?: 'producidas' | 'vendidas' } };
   contribucionMarginal?: {
     incompleta: boolean;
@@ -25,7 +35,7 @@ type ResultadoCorrida = {
     unidadesVendidas: number;
     costoVariableUnitario: number | null;
     contribucionMarginalUnitaria: number | null;
-    componentes: Array<{ importeAbsorcion: number; comportamientoVolumen: string | null; parametroId: string | null }>;
+    componentes: Array<{ etiqueta: string; importeAbsorcion: number; comportamientoVolumen: string | null; parametroId: string | null }>;
     motivos?: string[];
   };
   puntoEquilibrio?: {
@@ -35,6 +45,20 @@ type ResultadoCorrida = {
     motivos?: string[];
     motivoSinEquilibrio?: string;
   };
+};
+
+// Varios indicadores pueden depender del mismo dato; el tablero ofrece la acción una sola vez.
+const pendientesUnicos = (
+  periodo: { id: string; codigo: string },
+  fuentes: FuentePendiente[],
+): PendienteCierre[] => {
+  const vistos = new Set<string>();
+  return fuentes.flatMap((fuente) => {
+    const clave = `${fuente.area}:${fuente.dato}`;
+    if (vistos.has(clave)) return [];
+    vistos.add(clave);
+    return [{ ...fuente, periodo }];
+  });
 };
 
 const incompleto = (motivos: string[], parametrosSinConfirmarDetalle: ParametroSinConfirmar[] = []): NumeroTablero => ({
@@ -82,8 +106,10 @@ export class OwnerDashboardService {
     const sinCorrida = ['No hay una corrida de cálculo para este período.'];
     if (!run) {
       const falta = incompleto(sinCorrida);
+      const periodo = { id: period.id, codigo: period.code };
       return {
-        periodo: { id: period.id, codigo: period.code }, corrida: null,
+        periodo, corrida: null,
+        pendientes: pendientesUnicos(periodo, [{ area: 'calculo', dato: 'corrida de cálculo' }]),
         costoPorCajon: { variable: falta, fijo: falta, total: falta },
         precioPromedioVenta: falta, contribucionMarginalPorCajon: falta,
         puntoEquilibrioCajones: { ...falta, fechaUltimoRecalculo: null },
@@ -92,11 +118,13 @@ export class OwnerDashboardService {
     }
 
     const resultado = run.results as ResultadoCorrida;
+    const periodo = { id: period.id, codigo: period.code };
     const contribucion = resultado.contribucionMarginal;
     const equilibrio = resultado.puntoEquilibrio;
     const unidadesEquilibrio = equilibrio?.unidadesEquilibrio ?? null;
     const factor = unidadVenta ? Number(unidadVenta.factor) : null;
     const motivosBase = resultado.incompletitud?.incompleto ? (resultado.incompletitud.motivos ?? []) : [];
+    const datosPendientesBase = resultado.incompletitud?.datosPendientes ?? [];
     const idsParametros = contribucion?.componentes.map((c) => c.parametroId).filter((id): id is string => id !== null) ?? [];
     const parametrosSinConfirmar = idsParametros.length > 0
       ? await withTenant(userId, async (tx) => (await tx.parametroCosteo.findMany({
@@ -114,6 +142,29 @@ export class OwnerDashboardService {
     const sinVentas = !contribucion || contribucion.unidadesVendidas <= 0
       ? ['Falta cargar ventas del período para obtener este indicador.']
       : [];
+    const pendientesBase = datosPendientesBase.length > 0
+      ? datosPendientesBase.map(({ nombre }) => ({ area: 'imputacion' as const, dato: nombre }))
+      : motivosBase.map((motivo) => ({ area: 'imputacion' as const, dato: motivo }));
+    const pendientesClasificacion = contribucion?.componentes.flatMap((componente) => {
+      if (componente.comportamientoVolumen === null) {
+        return [{ area: 'costeo' as const, dato: `clasificación frente al volumen del rubro ${componente.etiqueta}` }];
+      }
+      if (componente.comportamientoVolumen === 'SEMIFIJO') {
+        return [{ area: 'costeo' as const, dato: `tramo variable del rubro ${componente.etiqueta}` }];
+      }
+      return [];
+    }) ?? [];
+    const pendientes = pendientesUnicos(periodo, [
+      ...pendientesBase,
+      ...(factor === null ? [{ area: 'configuracion' as const, dato: 'unidad de venta "cajon" con factor de conversión' }] : []),
+      ...(baseUnidades <= 0 ? [{ area: 'produccion' as const, dato: 'cantidad producida mayor a cero' }] : []),
+      ...(sinVentas.length > 0 ? [{ area: 'ventas' as const, dato: 'ventas del período' }] : []),
+      ...pendientesClasificacion,
+      ...(equilibrio?.motivoSinEquilibrio ? [{ area: 'costeo' as const, dato: 'contribución marginal unitaria positiva' }] : []),
+      ...(!contribucion || resultado.detail?.unitCost?.unitFinishedGoodsCost == null
+        ? [{ area: 'costeo' as const, dato: 'resultado de costos de la corrida' }]
+        : []),
+    ]);
     const costosBase = [...motivosBase, ...sinUnidad, ...sinProduccion];
     const costos = !contribucion || factor === null || baseUnidades <= 0 || resultado.detail?.unitCost?.unitFinishedGoodsCost == null
       ? { variable: incompleto(costosBase.length > 0 ? costosBase : ['Falta el resultado de costos de la corrida.'], parametrosSinConfirmar), fijo: incompleto(costosBase.length > 0 ? costosBase : ['Falta el resultado de costos de la corrida.'], parametrosSinConfirmar), total: incompleto(costosBase.length > 0 ? costosBase : ['Falta el resultado de costos de la corrida.'], parametrosSinConfirmar) }
@@ -135,8 +186,9 @@ export class OwnerDashboardService {
         : completo(numero * factor, parametrosSinConfirmar);
 
     return {
-      periodo: { id: period.id, codigo: period.code },
+      periodo,
       corrida: { id: run.id, validada: run.validated, ejecutadaEn: run.executedAt.toISOString() },
+      pendientes,
       costoPorCajon: costos,
       precioPromedioVenta: convertido(contribucion?.precioUnitario ?? null, [...motivosBase, ...sinVentas]),
       contribucionMarginalPorCajon: convertido(

@@ -48,6 +48,7 @@ describe('A-07 — tablero del dueño por período', () => {
       resultadoPeriodo: { valor: 12, completo: true },
     });
     expect(tablero.costoPorCajon.variable).toMatchObject({ parametrosSinConfirmar: false, parametrosSinConfirmarDetalle: [] });
+    expect(tablero.pendientes).toEqual([]);
   });
 
   it('marca incompletos los indicadores comerciales si no hay ventas', async () => {
