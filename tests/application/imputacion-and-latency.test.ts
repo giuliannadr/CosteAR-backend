@@ -39,6 +39,7 @@ const configValida = {
 const mockTx = {
   costStructure: { findFirst: vi.fn() },
   dataPoint: { findMany: vi.fn(), findFirst: vi.fn() },
+  parametroCosteo: { findMany: vi.fn().mockResolvedValue([]) },
   // Lock de fila que persistCalculationRun toma antes de asignar runN.
   $queryRaw: vi.fn().mockResolvedValue([]),
   calculationRun: { findFirst: vi.fn(), create: vi.fn() },

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CalculationRunService } from '@/application/cost-structures/calculation-run-service.js';
+import { CostStructureService } from '@/application/cost-structures/cost-structure-service.js';
 import {
   CLAVES_COMPORTAMIENTO_CONTRIBUCION,
   type ContribucionMarginal,
@@ -118,5 +119,47 @@ describe('A-05 — contribución marginal persistida por período', () => {
     const contribucionDespues = (segunda.results as { contribucionMarginal: ContribucionMarginal }).contribucionMarginal;
     expect(contribucionDespues).toMatchObject({ incompleta: false, contribucionMarginalUnitaria: 7 });
     expect(segunda.results.productionCost).toBe(primera.results.productionCost);
+  });
+
+  it('el simulador comparte la vista persistida, refleja shocks y marca faltantes', async () => {
+    const simulator = new CostStructureService(db);
+    const runs = new CalculationRunService(db);
+    const actor = { id: tenant.userId, role: 'COSTISTA', area: 'costista' } as const;
+
+    const simulated = await withTenantContext(tenant.userId, () =>
+      simulator.simulate(tenant.userId, tenant.structureId, {}),
+    );
+    const persisted = await withTenantContext(tenant.userId, () =>
+      runs.calculate(tenant.userId, tenant.structureId, actor),
+    );
+
+    expect(simulated.result).toMatchObject({
+      rawMaterialConsumed: persisted.results.rawMaterialConsumed,
+      directLaborTotal: persisted.results.directLaborTotal,
+      indirectCostsApplied: persisted.results.indirectCostsApplied,
+      incompletitud: persisted.results.incompletitud,
+      contribucionMarginal: persisted.results.contribucionMarginal,
+    });
+    expect(simulated.result.puntoEquilibrio.unidadesEquilibrio)
+      .toBe(persisted.results.puntoEquilibrio.unidadesEquilibrio);
+
+    const shocked = await withTenantContext(tenant.userId, () =>
+      simulator.simulate(tenant.userId, tenant.structureId, { sales: 0.5 }),
+    );
+    expect(shocked.result.puntoEquilibrio.unidadesEquilibrio)
+      .not.toBe(simulated.result.puntoEquilibrio.unidadesEquilibrio);
+
+    await withTenant(tenant.userId, (tx) =>
+      tx.parametroCosteo.updateMany({
+        where: { companyId: tenant.companyId, structureId: tenant.structureId },
+        data: { comportamientoVolumen: null, clasificadoPorUserId: null, clasificadoEn: null, confirmado: false },
+      }),
+    );
+    const incompleta = await withTenantContext(tenant.userId, () =>
+      simulator.simulate(tenant.userId, tenant.structureId, {}),
+    );
+    expect(incompleta.result.contribucionMarginal.incompleta).toBe(true);
+    expect(incompleta.result.puntoEquilibrio.incompleta).toBe(true);
+    expect(incompleta.result.contribucionMarginal.motivos.length).toBeGreaterThan(0);
   });
 });

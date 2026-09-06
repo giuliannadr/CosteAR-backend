@@ -66,6 +66,9 @@ const structure = {
 function serviceWith() {
   const db = {
     costStructure: { findFirst: vi.fn(async () => structure) },
+    dataPoint: { findMany: vi.fn(async () => []) },
+    costPeriod: { findFirst: vi.fn(async () => null) },
+    parametroCosteo: { findMany: vi.fn(async () => []) },
   };
   return new CostStructureService(db as never);
 }
@@ -106,6 +109,9 @@ describe('Shock Test — con N materias primas', () => {
   it('simular NO guarda nada (es un what-if, no un cálculo real)', async () => {
     const db = {
       costStructure: { findFirst: vi.fn(async () => structure) },
+      dataPoint: { findMany: vi.fn(async () => []) },
+      costPeriod: { findFirst: vi.fn(async () => null) },
+      parametroCosteo: { findMany: vi.fn(async () => []) },
       costCalculation: { create: vi.fn() },
       $transaction: vi.fn(),
     };

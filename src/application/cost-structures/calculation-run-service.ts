@@ -10,12 +10,6 @@ import {
   inventorySchema,
 } from '../../shared/schemas/cost.schema.js';
 import { type CalculationInput } from '../../domain/calculations/calculate.js';
-import {
-  calcularContribucionMarginal,
-  CLAVES_COMPORTAMIENTO_CONTRIBUCION,
-  type FilaComportamiento,
-} from '../../domain/calculations/contribucion-marginal.js';
-import { calcularPuntoEquilibrio } from '../../domain/calculations/punto-equilibrio.js';
 import { PuntoEquilibrioAlertService } from '../alerts/punto-equilibrio-alert-service.js';
 import { type TreeNode } from './tree-builder.js';
 import {
@@ -25,6 +19,7 @@ import {
 import { selectCostingEngine } from './costing-engine.js';
 import { persistCalculationRun, type RunTrigger } from './calculation-run-persistence.js';
 import { validateCalculationInputs, toMissingInputError } from './validate-inputs.js';
+import { enrichCalculationResult } from './calculation-result-enrichment.js';
 
 /**
  * Marca de incompletitud de una corrida (F04). Contrato ADITIVO que consume el
@@ -220,13 +215,6 @@ export class CalculationRunService {
     // ver `CostPeriodService.close` y DECISIONES.md.
     // Nota: `take: 20` acota nombres y payload; con >20 pendientes el conteo del
     // motivo queda en 20 (mismo tope que la detección original).
-    const pending = await this.db.dataPoint.findMany({
-      where: { structureId, periodoImputado: null, voidedAt: null, status: { not: 'anulado' } },
-      select: { id: true, label: true },
-      take: 20,
-    });
-    const incompletitud = buildIncompletitud(pending);
-
     const input: CalculationInput = {
       rawMaterial: rawMaterialSectionSchema.parse(s.rawMaterialConfig),
       directLabor: directLaborConfigSchema.parse(s.directLaborConfig),
@@ -265,62 +253,17 @@ export class CalculationRunService {
     // costista está viendo cuando aprieta el botón. Si todavía no hay ninguno
     // (estructura recién creada), queda en null: mejor sin período que con uno
     // inventado.
-    const openPeriod = await this.db.costPeriod.findFirst({
-      where: { structureId, status: 'OPEN', deletedAt: null },
-      select: { id: true },
-    });
-
     // A-05 — Costeo variable. La contribución es una VISTA de los tres importes
     // ya producidos por absorción; no altera el motor ni vuelve a calcularlos.
     // Si la estructura no trae `companyId` (mocks históricos), la ausencia de
     // clasificación queda marcada como incompleta sin intentar una consulta sin
     // tenant. En producción `companyId` siempre existe por el modelo Prisma.
-    const clavesComportamiento = Object.values(CLAVES_COMPORTAMIENTO_CONTRIBUCION);
-    const filasComportamiento: FilaComportamiento[] = s.companyId
-      ? await this.db.parametroCosteo.findMany({
-          where: { companyId: s.companyId, clave: { in: clavesComportamiento }, deletedAt: null },
-          select: {
-            id: true,
-            clave: true,
-            comportamientoVolumen: true,
-            structureId: true,
-            periodId: true,
-            clasificadoPorUserId: true,
-            clasificadoEn: true,
-          },
-        })
-      : [];
-    const contribucionMarginal = calcularContribucionMarginal({
-      precioUnitario: input.sales.unitPrice,
-      unidadesVendidas: input.sales.quantity,
-      componentes: [
-        {
-          clave: CLAVES_COMPORTAMIENTO_CONTRIBUCION.materiaPrima,
-          etiqueta: 'Materia prima',
-          importeAbsorcion: output.rawMaterialConsumed,
-        },
-        {
-          clave: CLAVES_COMPORTAMIENTO_CONTRIBUCION.manoObraDirecta,
-          etiqueta: 'Mano de obra directa',
-          importeAbsorcion: output.directLaborTotal,
-        },
-        {
-          clave: CLAVES_COMPORTAMIENTO_CONTRIBUCION.costosIndirectos,
-          etiqueta: 'Costos indirectos de producción',
-          importeAbsorcion: output.indirectCostsApplied,
-        },
-      ],
-      clasificaciones: filasComportamiento,
-      contexto: { structureId, periodId: openPeriod?.id ?? null },
+    const { results, incompletitud, periodId } = await enrichCalculationResult(this.db, {
+      structureId,
+      companyId: s.companyId,
+      input,
+      output,
     });
-
-    // A-06: el punto de equilibrio es una vista persistida de la contribución,
-    // no un cálculo del frontend ni una modificación del motor de absorción.
-    const puntoEquilibrio = calcularPuntoEquilibrio(contribucionMarginal, new Date());
-
-    // La marca y la vista adicional viven DENTRO de `results`: se persisten con
-    // la corrida y no cambian los campos existentes del resultado de absorción.
-    const results = { ...output, incompletitud, contribucionMarginal, puntoEquilibrio };
 
     return withTenant(userId, async (tx) => {
       // Persistencia COMPARTIDA (misma que usará el motor de Procesos, B17): una
@@ -329,7 +272,7 @@ export class CalculationRunService {
         structureId,
         engineVersion: engine.engineVersion,
         executedBy: actor.id,
-        periodId: openPeriod?.id ?? null,
+        periodId,
         trigger,
         inputsSnapshot: input,
         results,
@@ -341,9 +284,9 @@ export class CalculationRunService {
         userId,
         companyId: s.companyId,
         structureId,
-        periodId: openPeriod?.id ?? null,
+        periodId,
         runId: run.id,
-        puntoEquilibrio,
+        puntoEquilibrio: results.puntoEquilibrio,
         fecha: new Date(),
       });
 

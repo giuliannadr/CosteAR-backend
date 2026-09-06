@@ -20,6 +20,7 @@ import {
 import { parseIndirectCostConfigInput } from './validate-inputs.js';
 import { AllocationBaseService } from './allocation-base-service.js';
 import { CalculationRunService } from './calculation-run-service.js';
+import { enrichCalculationResult } from './calculation-result-enrichment.js';
 import { requireWritablePeriod, type PeriodMirrorData } from './period-sync.js';
 import { codeFromDate } from '../../domain/periods/period-calendar.js';
 import { companyRhythm } from '../../domain/periods/effective-rhythm.js';
@@ -856,7 +857,13 @@ export class CostStructureService {
       input.sales.unitPrice *= mul;
     }
 
-    const result = runCalculation(input);
-    return { result };
+    const output = runCalculation(input);
+    const { results } = await enrichCalculationResult(this.db, {
+      structureId: id,
+      companyId: s.companyId,
+      input,
+      output,
+    });
+    return { result: results };
   }
 }
