@@ -79,7 +79,30 @@
 # arreglarlo es escribir los dos refs completos en el issue, no ablandar esto.
 name: Desbloquear issues
 
+# POR QUE ADEMAS DEL CRON: GITHUB NO HONRA EL "CADA 10 MINUTOS" (06-09-2026)
+#
+# El cron de abajo dice cada 10 minutos y GitHub lo agrupa. Medido el 06-09: la
+# ultima corrida automatica habia sido 1h52m antes. Ese dia `backend#260` cerro
+# a las 19:38 y `frontend#47` —que lo esperaba— siguio bloqueado hasta que se
+# corrio el barrido a mano a las 19:45. El trabajo estaba hecho, el agente tenia
+# la cola vacia, y nada estaba fallando.
+#
+# `workflow_run` sobre Auto-merge cierra ese hueco: el momento exacto en que una
+# dependencia puede haberse cerrado es cuando el auto-merge termina, porque es el
+# mismo job el que mergea Y cierra el issue. Asi el barrido corre AHI, no cuando
+# GitHub tenga ganas.
+#
+# Es el mismo arreglo que el del 05-09 sobre `auto-merge.yml`, y por el mismo
+# motivo: el GITHUB_TOKEN no encadena, asi que un `issues: closed` no existe y la
+# unica senal que si se emite es el fin de la corrida.
+#
+# EL CRON NO SE SACA. Es la red de abajo: si una corrida se pierde, la siguiente
+# levanta lo que falto. Un evento perdido no vuelve nunca; un barrido se repara
+# solo. Los dos disparadores hacen lo mismo y el trabajo es idempotente.
 on:
+  workflow_run:
+    workflows: ["Auto-merge"]
+    types: [completed]
   schedule:
     - cron: '*/10 * * * *'
   workflow_dispatch:
