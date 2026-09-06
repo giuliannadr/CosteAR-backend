@@ -101,9 +101,15 @@ export class AuthService {
     // Alta completa en una transacción: usuario + preferencias + cartera
     // inicial + la ACEPTACIÓN de términos — es la firma del contrato, no
     // puede quedar un usuario creado sin su aceptación registrada.
+    // El usuario aun no tiene JWT al registrarse, pero su AlertSetting si queda
+    // bajo RLS. Reservar el id antes permite abrir una unica transaccion con el
+    // tenant correcto, sin convertir el alta publica en una excepcion de RLS.
+    const userId = randomUUID();
     const user = await this.db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.user_id', ${userId}, true)`;
       const created = await tx.user.create({
         data: {
+          id: userId,
           email: input.email,
           passwordHash,
           name: input.name,
