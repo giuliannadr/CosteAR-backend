@@ -84,3 +84,7 @@ pr,issue,autor,base,abierto,mergeado,horas,archivos,agregadas,borradas,corridas_
 262,260,AlanArevalo1,dev,2026-09-06T19:17:56Z,2026-09-06T19:38:47Z,0.3,7,259,1,5,0,,,docs/sesiones/2026-09-06-260-parametros-catalogo.md
 263,,SantiagoBriz,dev,2026-09-06T20:08:10Z,2026-09-06T20:09:42Z,0.0,2,525,0,4,0,,,
 265,264,SantiagoBriz,dev,2026-09-06T20:45:54Z,2026-09-06T20:47:25Z,0.0,1,9573,9511,3,0,,,
+266,,app/dependabot,dev,2026-09-07T02:29:46Z,2026-09-07T03:28:31Z,1.0,1,5,5,14,0,,,
+267,,app/dependabot,dev,2026-09-07T02:29:50Z,2026-09-07T03:25:00Z,0.9,1,7,7,9,0,,,
+268,,app/dependabot,dev,2026-09-07T02:29:57Z,2026-09-07T03:21:33Z,0.9,1,18,32,6,0,,,
+270,,app/dependabot,dev,2026-09-07T02:30:24Z,2026-09-07T03:32:12Z,1.0,1,3,3,15,0,,,
